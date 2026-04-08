@@ -196,14 +196,14 @@ function NpcSpawner.Spawn(Config: SpawnConfig): SpawnResult
 		end
 		-- else: Pristine — no modification needed
 
-		-- Isolation: NoRender
-		if Config.IsolationMode == "NoRender" or Config.IsolationMode == "Full" then
+		-- Isolation: No Render — hide meshes, keep Motor6D writes
+		if Config.IsolationMode == "No Render" then
 			__ApplyNoRender(Clone)
 		end
 
-		-- Isolation: NoEval — skip RigResolver entirely
+		-- Isolation: No Eval — skip RigResolver entirely
 		local Binding: any = nil
-		if Config.IsolationMode ~= "NoEval" then
+		if Config.IsolationMode ~= "No Eval" then
 			local Success, Result = pcall(RigResolver.Resolve, Clone)
 			if Success then
 				Binding = Result

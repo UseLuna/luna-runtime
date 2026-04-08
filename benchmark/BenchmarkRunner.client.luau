@@ -39,6 +39,8 @@ local Harness = Benchmark:WaitForChild("Harness")
 local TimingCollector = require(Harness.TimingCollector)
 local NpcSpawner = require(Harness.NpcSpawner)
 local AnimationProvider = require(Harness.AnimationProvider)
+local NativeAnimatorRunner = require(Harness.NativeAnimatorRunner)
+local BaselineStore = require(Harness.BaselineStore)
 local ProfilerInjector = require(Harness.ProfilerInjector)
 
 local Iris = require(Packages:WaitForChild("iris"))
@@ -247,6 +249,39 @@ local function PlayOnModels(LoadedAnim: any?)
 	end
 end
 
+-- ── GC Stabilization Helper ─────────────────────────────────────────────────
+
+--- GC-stabilization-gated cooldown.
+--- Yields until gcinfo() delta < COOLDOWN_HEAP_DELTA_KB over 1 second, or max timeout reached.
+--- Returns true if stabilized, false if timed out.
+local function WaitForGcStabilization(): boolean
+	local MaxTimeout = BenchmarkConstants.COOLDOWN_MAX_TIMEOUT
+	local SampleInterval = BenchmarkConstants.COOLDOWN_SAMPLE_INTERVAL
+	local HeapDeltaThreshold = BenchmarkConstants.COOLDOWN_HEAP_DELTA_KB
+
+	local Elapsed = 0
+	local PreviousHeap = gcinfo()
+
+	while Elapsed < MaxTimeout do
+		task.wait(SampleInterval)
+		Elapsed += SampleInterval
+
+		local CurrentHeap = gcinfo()
+		local Delta = math.abs(CurrentHeap - PreviousHeap)
+		PreviousHeap = CurrentHeap
+
+		-- Check if heap has stabilized: delta < threshold over at least 1 second of samples.
+		-- We need two consecutive stable readings (2 * SampleInterval >= 1s at 0.5s interval).
+		if Delta < HeapDeltaThreshold and Elapsed >= 1 then
+			Logger.Info(`BenchmarkRunner: GC stabilized after {string.format("%.1f", Elapsed)}s (delta={string.format("%.1f", Delta)}KB)`)
+			return true
+		end
+	end
+
+	Logger.Warn(`BenchmarkRunner: GC stabilization timed out after {MaxTimeout}s`)
+	return false
+end
+
 -- ── Spawn + Start ───────────────────────────────────────────────────────────
 
 local function SpawnAndStart()
@@ -312,12 +347,339 @@ local function CleanupBenchmark()
 	State.WarmupFrame = 0
 end
 
+-- ── Sequential Comparison Orchestration ─────────────────────────────────────
+
+--[[
+	Multi-phase sequential comparison state machine. Measures Luna, then native
+	Animator (playing vs idle) to isolate engine animation cost. Runs in a
+	spawned coroutine so UI stays responsive during the multi-minute process.
+]]
+local function RunSequentialComparison()
+	local MeasureDuration = BenchmarkConstants.DEFAULT_WINDOW_SECONDS * 3 -- 15 seconds
+	local WarmupMinFrames = BenchmarkConstants.WARMUP_MIN_FRAMES
+
+	State.IsRunning = true
+	State.GcWarning = false
+	Collector.SetEnabled(Collector, true)
+
+	-- ── Phase 1: Luna ───────────────────────────────────────────────────
+	Logger.Info("BenchmarkRunner: [Comparison] Phase 1 — Luna")
+	State.TransitionState = "ComparisonLuna"
+
+	SpawnAndStart()
+
+	-- Wait for warmup to complete
+	while State.TransitionState == "Respawning" or State.TransitionState == "WarmingUp" do
+		RunService.RenderStepped:Wait()
+	end
+
+	-- Measure for MeasureDuration seconds
+	Collector.Reset(Collector)
+	local LunaMeasureStart = os.clock()
+	while os.clock() - LunaMeasureStart < MeasureDuration do
+		RunService.RenderStepped:Wait()
+	end
+
+	local LunaTiming = Collector.GetSnapshot(Collector)
+	State.Timing = LunaTiming
+	Logger.Info(`BenchmarkRunner: [Comparison] Luna done — Avg={string.format("%.2f", LunaTiming.AvgTotalMs)}ms`)
+
+	-- ── Cooldown 1: Cleanup Luna ────────────────────────────────────────
+	Logger.Info("BenchmarkRunner: [Comparison] Cooldown 1 — cleaning up Luna")
+	State.TransitionState = "Cooldown"
+	NpcSpawner.Cleanup()
+	LunaRuntimeWrapper.Reset()
+	Collector.Reset(Collector)
+
+	if not WaitForGcStabilization() then
+		State.GcWarning = true
+	end
+
+	-- ── Phase 2: Native Playing ─────────────────────────────────────────
+	Logger.Info("BenchmarkRunner: [Comparison] Phase 2 — Native Playing")
+	State.TransitionState = "ComparisonNativePlaying"
+
+	-- Find template model for native spawning
+	local Templates = workspace:FindFirstChild("Templates")
+	local Template = if Templates then Templates:FindFirstChild(State.RigType) :: Model? else nil
+
+	if not Template then
+		Logger.Warn("BenchmarkRunner: [Comparison] Cannot find template for native spawning — aborting")
+		State.TransitionState = "ComparisonDone"
+		State.IsRunning = false
+		return
+	end
+
+	-- Create an Animation instance for native playback
+	local Source = State.AnimationSource
+	local NativeAnimSource: Animation?
+
+	if Source.Kind == "AssetId" and Source.AssetId then
+		NativeAnimSource = AnimationProvider.FromAssetId(Source.AssetId)
+	else
+		-- For synthetic animations, we need an asset ID — native Animator cannot play EditAnimations.
+		-- Use a default walk animation asset as fallback.
+		Logger.Warn("BenchmarkRunner: [Comparison] Native phase requires an AssetId animation source. Using default walk anim.")
+		NativeAnimSource = AnimationProvider.FromAssetId("rbxassetid://180426354") -- Default R15 walk
+	end
+
+	NativeAnimatorRunner.Spawn(Template :: Model, State.NpcCount, State.Density, NativeAnimSource :: Animation)
+	NativeAnimatorRunner.PlayAll()
+
+	-- Warmup: wait WarmupMinFrames frames (60 default)
+	for _ = 1, WarmupMinFrames * 2 do
+		RunService.RenderStepped:Wait()
+	end
+
+	-- Measure native playing
+	local NativePlayingStart = os.clock()
+	local NativePlayingSumMs = 0
+	local NativePlayingPeakMs = 0
+	local NativePlayingFrames = 0
+	local NativePlayingHeapKb = 0
+
+	while os.clock() - NativePlayingStart < MeasureDuration do
+		local FrameStart = os.clock()
+		RunService.RenderStepped:Wait()
+		local FrameMs = (os.clock() - FrameStart) * 1000
+
+		NativePlayingFrames += 1
+		NativePlayingSumMs += FrameMs
+		if FrameMs > NativePlayingPeakMs then
+			NativePlayingPeakMs = FrameMs
+		end
+		NativePlayingHeapKb = gcinfo()
+	end
+
+	local NativePlayingAvgMs = if NativePlayingFrames > 0 then NativePlayingSumMs / NativePlayingFrames else 0
+	local NativePlayingFps = if NativePlayingFrames > 0 then NativePlayingFrames / MeasureDuration else 0
+
+	Logger.Info(`BenchmarkRunner: [Comparison] Native Playing done — Avg={string.format("%.2f", NativePlayingAvgMs)}ms`)
+
+	-- ── Cooldown 2: Stop animations (rigs stay) ─────────────────────────
+	Logger.Info("BenchmarkRunner: [Comparison] Cooldown 2 — stopping native animations")
+	State.TransitionState = "Cooldown"
+	NativeAnimatorRunner.StopAll()
+
+	if not WaitForGcStabilization() then
+		State.GcWarning = true
+	end
+
+	-- ── Phase 3: Native Idle ────────────────────────────────────────────
+	Logger.Info("BenchmarkRunner: [Comparison] Phase 3 — Native Idle")
+	State.TransitionState = "ComparisonNativeIdle"
+
+	local NativeIdleStart = os.clock()
+	local NativeIdleSumMs = 0
+	local NativeIdleFrames = 0
+
+	while os.clock() - NativeIdleStart < MeasureDuration do
+		local FrameStart = os.clock()
+		RunService.RenderStepped:Wait()
+		local FrameMs = (os.clock() - FrameStart) * 1000
+
+		NativeIdleFrames += 1
+		NativeIdleSumMs += FrameMs
+	end
+
+	local NativeIdleAvgMs = if NativeIdleFrames > 0 then NativeIdleSumMs / NativeIdleFrames else 0
+
+	Logger.Info(`BenchmarkRunner: [Comparison] Native Idle done — Avg={string.format("%.2f", NativeIdleAvgMs)}ms`)
+
+	-- ── Cooldown 3: Cleanup native ──────────────────────────────────────
+	Logger.Info("BenchmarkRunner: [Comparison] Cooldown 3 — cleaning up native")
+	State.TransitionState = "Cooldown"
+	NativeAnimatorRunner.Cleanup()
+
+	if not WaitForGcStabilization() then
+		State.GcWarning = true
+	end
+
+	-- ── Compute Results ─────────────────────────────────────────────────
+	-- Native Animator cost = Playing - Idle (isolates animation cost from rig presence cost)
+	local NativeAnimatorCostMs = math.max(0, NativePlayingAvgMs - NativeIdleAvgMs)
+	local NpcCount = State.NpcCount
+	local NativePerNpcUs = if NpcCount > 0 then NativeAnimatorCostMs / NpcCount * 1000 else 0
+
+	State.NativeStats = {
+		AvgTotalMs = NativeAnimatorCostMs,
+		PeakTotalMs = NativePlayingPeakMs,
+		PerNpcUs = NativePerNpcUs,
+		CurrentFps = NativePlayingFps,
+		HeapKb = NativePlayingHeapKb,
+	} :: BenchmarkTypes.NativeTimingSnapshot
+
+	State.Timing = LunaTiming
+
+	Logger.Info(
+		`BenchmarkRunner: [Comparison] Complete — Luna Avg={string.format("%.2f", LunaTiming.AvgTotalMs)}ms, `
+			.. `Native Animator Cost={string.format("%.2f", NativeAnimatorCostMs)}ms `
+			.. `(Playing={string.format("%.2f", NativePlayingAvgMs)}ms - Idle={string.format("%.2f", NativeIdleAvgMs)}ms)`
+	)
+
+	State.TransitionState = "ComparisonDone"
+	State.IsRunning = false
+end
+
+-- ── Automated Suite Runner ──────────────────────────────────────────────────
+
+--[[
+	Runs a matrix of benchmark configurations automatically, collecting timing
+	snapshots for each. Spawned in a coroutine so UI stays responsive.
+]]
+local function RunAutomatedSuite()
+	State.IsRunning = true
+	State.GcWarning = false
+	Collector.SetEnabled(Collector, true)
+
+	local AnimTypes = { "Simple", "WalkCycle" }
+	local NpcCounts = { 50, 100, 200 }
+	local EvalModes = { "Sampled", "Live" }
+	local IsolationModes = { "Full", "No Render", "No Apply", "No Eval" }
+
+	local SuiteResults: { BenchmarkTypes.SuiteResult } = {}
+	local ResultCount = 0
+	local MeasureSeconds = BenchmarkConstants.DEFAULT_WINDOW_SECONDS
+
+	local TotalConfigs = 0
+	local CompletedConfigs = 0
+
+	-- Pre-count total configs (excluding skipped combos) for progress logging
+	for _, AnimType in AnimTypes do
+		for _, _ in NpcCounts do
+			for _, EvalMode in EvalModes do
+				for _, IsolationMode in IsolationModes do
+					-- Skip nonsensical combos
+					local ShouldSkip = false
+					if IsolationMode == "No Eval" and EvalMode == "Live" then
+						ShouldSkip = true
+					end
+					if IsolationMode == "No Eval" and AnimType == "WalkCycle" then
+						ShouldSkip = true
+					end
+					if not ShouldSkip then
+						TotalConfigs += 1
+					end
+				end
+			end
+		end
+	end
+
+	Logger.Info(`BenchmarkRunner: [Suite] Starting automated suite with {TotalConfigs} configurations`)
+
+	for _, AnimType in AnimTypes do
+		for _, NpcCount in NpcCounts do
+			for _, EvalMode in EvalModes do
+				for _, IsolationMode in IsolationModes do
+					-- Skip nonsensical combos:
+					-- "No Eval" + "Live" — No Eval doesn't evaluate, eval mode irrelevant
+					if IsolationMode == "No Eval" and EvalMode == "Live" then
+						continue
+					end
+					-- "No Eval" + "WalkCycle" — only need one No Eval baseline, use Simple
+					if IsolationMode == "No Eval" and AnimType == "WalkCycle" then
+						continue
+					end
+
+					CompletedConfigs += 1
+					Logger.Info(
+						`BenchmarkRunner: [Suite] Config {CompletedConfigs}/{TotalConfigs} — `
+							.. `Anim={AnimType} NPCs={NpcCount} Eval={EvalMode} Isolation={IsolationMode}`
+					)
+
+					-- Set State config fields
+					State.NpcCount = NpcCount
+					State.EvalMode = EvalMode
+					State.IsolationMode = IsolationMode
+					State.AnimationSource = {
+						Kind = "Synthetic",
+						SyntheticType = AnimType,
+						KeyframeSequence = nil,
+						AssetId = nil,
+					}
+
+					-- Spawn and start
+					SpawnAndStart()
+
+					-- Wait for warmup to complete (poll TransitionState)
+					while State.TransitionState == "Respawning" or State.TransitionState == "WarmingUp" do
+						RunService.RenderStepped:Wait()
+					end
+
+					-- Reset collector and measure for MeasureSeconds
+					Collector.Reset(Collector)
+					local MeasureStart = os.clock()
+					while os.clock() - MeasureStart < MeasureSeconds do
+						RunService.RenderStepped:Wait()
+					end
+
+					-- Collect TimingSnapshot and build SuiteResult
+					local Snapshot = Collector.GetSnapshot(Collector)
+
+					local ConfigRecord: BenchmarkTypes.SuiteResultConfig = {
+						NpcCount = NpcCount,
+						RigType = State.RigType,
+						EvalMode = EvalMode,
+						SampleRate = State.SampleRate,
+						LayerCount = State.LayerCount,
+						IsolationMode = IsolationMode,
+						AnimationSourceKind = "Synthetic",
+						SyntheticType = AnimType,
+						LodEnabled = State.LodEnabled,
+						LodPreset = if State.LodEnabled then State.LodPreset else nil,
+					}
+
+					ResultCount += 1
+					SuiteResults[ResultCount] = {
+						Config = ConfigRecord,
+						Timing = Snapshot,
+						NativeTiming = nil,
+						GcWarning = false,
+					}
+
+					Logger.Info(
+						`BenchmarkRunner: [Suite] Result — Avg={string.format("%.2f", Snapshot.AvgTotalMs)}ms `
+							.. `Peak={string.format("%.2f", Snapshot.PeakTotalMs)}ms `
+							.. `PerNpc={string.format("%.1f", Snapshot.PerNpcUs)}us`
+					)
+
+					-- Cleanup + cooldown
+					NpcSpawner.Cleanup()
+					LunaRuntimeWrapper.Reset()
+					Collector.Reset(Collector)
+
+					local IsStable = WaitForGcStabilization()
+					if not IsStable then
+						-- Mark the last result with GcWarning
+						SuiteResults[ResultCount].GcWarning = true
+						State.GcWarning = true
+					end
+				end
+			end
+		end
+	end
+
+	-- Store results and transition to idle
+	State.SuiteResults = SuiteResults
+	State.TransitionState = "Idle"
+	State.IsRunning = false
+
+	Logger.Info(`BenchmarkRunner: [Suite] Complete — {ResultCount} result(s) collected`)
+end
+
 -- ── Callback Wiring ─────────────────────────────────────────────────────────
 
 State.RequestStart = function()
 	if State.IsRunning then
 		return
 	end
+
+	-- Sequential comparison mode: run the multi-phase comparison coroutine
+	if State.IsComparisonMode and State.ComparisonMode == "Sequential" then
+		task.spawn(RunSequentialComparison)
+		return
+	end
+
 	State.IsRunning = true
 	Collector.SetEnabled(Collector, true)
 	SpawnAndStart()
@@ -368,13 +730,54 @@ State.RequestSnapshot = function()
 end
 
 State.RequestSaveBaseline = function()
-	-- Stub: Task 17 wires this
-	Logger.Info("BenchmarkRunner: RequestSaveBaseline — not yet implemented")
+	local Results: { BenchmarkTypes.SuiteResult } = {}
+
+	if #State.SuiteResults > 0 then
+		-- If suite results exist, save those
+		Results = State.SuiteResults
+	elseif State.Timing then
+		-- If only current timing exists, save as single-entry suite
+		local ConfigRecord: BenchmarkTypes.SuiteResultConfig = {
+			NpcCount = State.NpcCount,
+			RigType = State.RigType,
+			EvalMode = State.EvalMode,
+			SampleRate = State.SampleRate,
+			LayerCount = State.LayerCount,
+			IsolationMode = State.IsolationMode,
+			AnimationSourceKind = State.AnimationSource.Kind,
+			SyntheticType = State.AnimationSource.SyntheticType,
+			LodEnabled = State.LodEnabled,
+			LodPreset = if State.LodEnabled then State.LodPreset else nil,
+		}
+
+		Results = {
+			{
+				Config = ConfigRecord,
+				Timing = State.Timing :: BenchmarkTypes.TimingSnapshot,
+				NativeTiming = State.NativeStats,
+				GcWarning = State.GcWarning,
+			},
+		}
+	else
+		Logger.Warn("BenchmarkRunner: RequestSaveBaseline — no timing data or suite results to save")
+		return
+	end
+
+	BaselineStore.Save(Results, State.RunNote)
+	local LoadedBaseline, LoadError = BaselineStore.Load()
+	if LoadedBaseline then
+		State.Baseline = LoadedBaseline
+		Logger.Info(`BenchmarkRunner: Baseline saved and reloaded ({#Results} result(s))`)
+	else
+		Logger.Warn(`BenchmarkRunner: Baseline saved but reload failed — {tostring(LoadError)}`)
+	end
 end
 
 State.RequestRunSuite = function()
-	-- Stub: Task 17 wires this
-	Logger.Info("BenchmarkRunner: RequestRunSuite — not yet implemented")
+	if State.IsRunning then
+		return
+	end
+	task.spawn(RunAutomatedSuite)
 end
 
 -- ── Panel Discovery (after callbacks are wired) ─────────────────────────────
@@ -437,8 +840,9 @@ local function OnRenderStepped(DeltaTime: number)
 			State.WarmupFrame = 0
 		end
 
-	elseif CurrentState == "Running" then
+	elseif CurrentState == "Running" or CurrentState == "ComparisonLuna" then
 		-- Full measurement cycle: BeginFrame → Step → MarkEvalEnd → EndFrame
+		-- Used for both normal running and the Luna phase of sequential comparison.
 		Collector.BeginFrame(Collector)
 		LunaRuntimeWrapper.Step(DeltaTime)
 		Collector.MarkEvalEnd(Collector)
@@ -446,22 +850,10 @@ local function OnRenderStepped(DeltaTime: number)
 
 		-- Update SharedState.Timing from latest snapshot
 		State.Timing = Collector.GetSnapshot(Collector)
-
-	elseif CurrentState == "Cooldown" then
-		-- GC stabilization — stub for now (Task 16 fills in full logic)
-		State.TransitionState = "Idle"
-
-	elseif CurrentState == "ComparisonLuna"
-		or CurrentState == "ComparisonNativePlaying"
-		or CurrentState == "ComparisonNativeIdle"
-		or CurrentState == "ComparisonDone"
-	then
-		-- Comparison phases — stub for now (Task 16 fills in full logic)
-		-- Still step animation if running
-		if State.IsRunning then
-			LunaRuntimeWrapper.Step(DeltaTime)
-		end
 	end
+
+	-- States not listed above (Cooldown, ComparisonNativePlaying, ComparisonNativeIdle,
+	-- ComparisonDone) require no per-frame work — their coroutines drive transitions.
 
 	-- ── Iris Rendering ──────────────────────────────────────────────────
 	-- Drive one Iris cycle. This calls all registered Iris:Connect callbacks.
