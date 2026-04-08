@@ -40,7 +40,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 			{ "NPC Count", 1, 1, 2000 },
 			{ number = NpcCountState }
 		)
-		if InputWidget.events.numberChanged() then
+		if InputWidget.numberChanged() then
 			State.NpcCount = NpcCountState.value
 		end
 	end
@@ -55,7 +55,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 			{ "Density", 1, 1, 20 },
 			{ number = DensityState }
 		)
-		if InputWidget.events.numberChanged() then
+		if InputWidget.numberChanged() then
 			State.Density = DensityState.value
 		end
 	end
@@ -72,7 +72,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 		if IsR6Active then
 			Iris.PopConfig()
 		end
-		if R6Button.events.clicked() then
+		if R6Button.clicked() then
 			State.RigType = "R6"
 		end
 
@@ -84,7 +84,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 		if IsR15Active then
 			Iris.PopConfig()
 		end
-		if R15Button.events.clicked() then
+		if R15Button.clicked() then
 			State.RigType = "R15"
 		end
 	end
@@ -104,7 +104,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 				{ "Missing Limb %", 1, 0, 100 },
 				{ number = MissingState }
 			)
-			if SliderWidget.events.numberChanged() then
+			if SliderWidget.numberChanged() then
 				local NewMissing = MissingState.value
 				-- Clamp: MissingLimb + ToolEquipped must not exceed 100
 				local ToolEquipped = State.RigVariants.ToolEquippedPercent
@@ -129,7 +129,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 				{ "Tool Equipped %", 1, 0, 100 },
 				{ number = ToolState }
 			)
-			if SliderWidget.events.numberChanged() then
+			if SliderWidget.numberChanged() then
 				local NewTool = ToolState.value
 				-- Clamp: MissingLimb + ToolEquipped must not exceed 100
 				local MissingLimb = State.RigVariants.MissingLimbPercent
@@ -192,7 +192,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 			if IsActive then
 				Iris.PopConfig()
 			end
-			if KindButton.events.clicked() then
+			if KindButton.clicked() then
 				local NewSource: BenchmarkTypes.AnimationSource = {
 					Kind = Kind :: BenchmarkTypes.AnimationSourceKind,
 					SyntheticType = if Kind == "Synthetic" then (State.AnimationSource.SyntheticType or "WalkCycle") else nil,
@@ -220,7 +220,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 				if IsActive then
 					Iris.PopConfig()
 				end
-				if SubButton.events.clicked() then
+				if SubButton.clicked() then
 					State.AnimationSource = {
 						Kind = "Synthetic",
 						SyntheticType = SubType :: "Simple" | "WalkCycle" | "Heavy",
@@ -247,7 +247,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 			if IsActive then
 				Iris.PopConfig()
 			end
-			if ModeButton.events.clicked() then
+			if ModeButton.clicked() then
 				State.EvalMode = Mode
 			end
 		end
@@ -264,7 +264,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 			{ "Sample Rate", 1, 1, 240 },
 			{ number = SampleRateState }
 		)
-		if SampleWidget.events.numberChanged() then
+		if SampleWidget.numberChanged() then
 			State.SampleRate = SampleRateState.value
 		end
 	end
@@ -282,7 +282,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 			{ "Layer Count", 1, 1, 16 },
 			{ number = LayerState }
 		)
-		if LayerWidget.events.numberChanged() then
+		if LayerWidget.numberChanged() then
 			State.LayerCount = LayerState.value
 		end
 	end
@@ -304,7 +304,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 			if IsActive then
 				Iris.PopConfig()
 			end
-			if IsoButton.events.clicked() then
+			if IsoButton.clicked() then
 				State.IsolationMode = IsoKeys[Index]
 			end
 		end
@@ -319,7 +319,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 	do
 		-- "100 R15 Walk"
 		local Preset1 = Iris.Button({ "100 R15 Walk" })
-		if Preset1.events.clicked() then
+		if Preset1.clicked() then
 			State.NpcCount = 100
 			State.RigType = "R15"
 			State.EvalMode = "Sampled"
@@ -341,7 +341,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 
 		-- "1000 R6 Simple"
 		local Preset2 = Iris.Button({ "1000 R6 Simple" })
-		if Preset2.events.clicked() then
+		if Preset2.clicked() then
 			State.NpcCount = 1000
 			State.RigType = "R6"
 			State.EvalMode = "Sampled"
@@ -367,7 +367,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 	do
 		-- "Stress Test"
 		local Preset3 = Iris.Button({ "Stress Test" })
-		if Preset3.events.clicked() then
+		if Preset3.clicked() then
 			State.NpcCount = 2000
 			State.RigType = "R15"
 			State.EvalMode = "Sampled"
@@ -389,7 +389,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 
 		-- "Cache Test"
 		local Preset4 = Iris.Button({ "Cache Test" })
-		if Preset4.events.clicked() then
+		if Preset4.clicked() then
 			State.NpcCount = 500
 			State.RigType = "R15"
 			State.EvalMode = "Sampled"
@@ -417,7 +417,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 
 	if not State.IsRunning then
 		local StartButton = Iris.Button({ "  Start  " })
-		if StartButton.events.clicked() then
+		if StartButton.clicked() then
 			State.RequestStart()
 		end
 	else
@@ -428,7 +428,7 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 		end
 
 		local StopButton = Iris.Button({ "  Stop  " })
-		if StopButton.events.clicked() then
+		if StopButton.clicked() then
 			State.RequestStop()
 		end
 	end

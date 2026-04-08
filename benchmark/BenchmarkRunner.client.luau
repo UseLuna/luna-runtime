@@ -26,7 +26,6 @@ debug.setmemorycategory("LunaBenchmark")
 -- ── Requires ────────────────────────────────────────────────────────────────
 
 local LunaRuntime = ReplicatedStorage:WaitForChild("LunaRuntime")
-local Packages = ReplicatedStorage:WaitForChild("Packages")
 local Benchmark = ReplicatedStorage:WaitForChild("Benchmark")
 
 local Logger = require(LunaRuntime.Shared.Logger)
@@ -43,7 +42,7 @@ local NativeAnimatorRunner = require(Harness.NativeAnimatorRunner)
 local BaselineStore = require(Harness.BaselineStore)
 local ProfilerInjector = require(Harness.ProfilerInjector)
 
-local Iris = require(Packages:WaitForChild("iris"))
+local Iris = require(LunaRuntime.Packages:WaitForChild("iris"))
 
 -- ── Types ───────────────────────────────────────────────────────────────────
 

@@ -142,12 +142,12 @@ function TimingPanel.Render(Iris: any, State: SharedState)
 	Iris.SameLine()
 	do
 		local ResetButton = Iris.Button({ "Reset" })
-		if ResetButton.events.clicked() then
+		if ResetButton.clicked() then
 			State.RequestStop()
 		end
 
 		local SnapshotButton = Iris.Button({ "Snapshot" })
-		if SnapshotButton.events.clicked() then
+		if SnapshotButton.clicked() then
 			State.RequestSnapshot()
 		end
 	end
