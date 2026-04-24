@@ -32,32 +32,25 @@ internal/         -- Private docs, specs, research (gitignored on public repo)
 - `test.project.json` — test build → `ReplicatedStorage.Luna` (matches monorepo test paths)
 
 ## Related Repos
-- `UseLuna/luna-animator` — Closed-source editor (consumes this repo as submodule)
-- `UseLuna/luna-bridge` — Future convenience layer (auto-discovery, replication)
+- `UseLuna/luna-animator` — Closed-source editor. Consumes this package via pesde workspace dep during private dev, will flip to `{ name = "useluna/luna_runtime", version = "^..." }` at public release.
+- `UseLuna/luna-bridge` — Future convenience layer (auto-discovery, replication).
 
 ## Commands
 ```
 # Dev / Build
-rojo serve default.project.json   # Sync to Studio
+rojo serve default.project.json   # Sync to Studio (standalone)
 rojo build default.project.json -o build/runtime.rbxl
-
-# Sync to monorepo for testing (until submodule is set up)
-cp -r src/Core/* ~/Documents/LunaAnimator/src/Luna/Core/
-cp -r src/Solver/* ~/Documents/LunaAnimator/src/Luna/Solver/
-cp -r src/Types/* ~/Documents/LunaAnimator/src/Luna/Types/
-cp -r src/Shared/* ~/Documents/LunaAnimator/src/Luna/Shared/
-
-# Sync FROM monorepo (if changes were made there)
-cp -r ~/Documents/LunaAnimator/src/Luna/Core/* src/Core/
-cp -r ~/Documents/LunaAnimator/src/Luna/Solver/* src/Solver/
-cp -r ~/Documents/LunaAnimator/src/Luna/Types/* src/Types/
-cp -r ~/Documents/LunaAnimator/src/Luna/Shared/* src/Shared/
 
 # Tooling
 selene src/             # Lint
 stylua src/             # Format
 pesde install           # Install packages
 ```
+
+Luna Animator consumes this package as a pesde workspace dep from
+`~/Documents/luna-workspace/luna-animator/pesde.toml`. Edits here
+propagate automatically on the animator's next `rojo serve` — no
+`cp -r`, no commit round-trip.
 
 ## Code Style — CRITICAL
 - `--!strict` on first line of every file
