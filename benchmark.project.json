@@ -1,0 +1,40 @@
+{
+	"name": "LunaBenchmark",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"LunaRuntime": {
+				"$className": "Folder",
+				"Core": { "$path": "src/Core" },
+				"Solver": { "$path": "src/Solver" },
+				"Types": { "$path": "src/Types" },
+				"Shared": { "$path": "src/Shared" },
+				"Packages": { "$path": "roblox_packages" }
+			},
+			"Benchmark": {
+				"$className": "Folder",
+				"Panels": { "$path": "benchmark/Panels" },
+				"Harness": { "$path": "benchmark/Harness" },
+				"BenchmarkConstants": { "$path": "benchmark/BenchmarkConstants.luau" },
+				"BenchmarkTypes": { "$path": "benchmark/BenchmarkTypes.luau" }
+			}
+		},
+		"StarterPlayer": {
+			"$className": "StarterPlayer",
+			"StarterPlayerScripts": {
+				"$className": "StarterPlayerScripts",
+				"BenchmarkRunner": { "$path": "benchmark/BenchmarkRunner.client.luau" }
+			}
+		},
+		"Workspace": {
+			"$className": "Workspace",
+			"Templates": {
+				"$className": "Folder"
+			},
+			"Animations": {
+				"$className": "Folder"
+			}
+		}
+	}
+}

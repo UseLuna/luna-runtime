@@ -411,6 +411,56 @@ function ControlPanel.Render(Iris: any, State: SharedState)
 	end
 	Iris.End()
 
+	Iris.SameLine()
+	do
+		-- "1000 R6 Walk"
+		local Preset5 = Iris.Button({ "1000 R6 Walk" })
+		if Preset5.clicked() then
+			State.NpcCount = 1000
+			State.RigType = "R6"
+			State.EvalMode = "Sampled"
+			State.SampleRate = 30
+			State.LayerCount = 1
+			State.IsolationMode = "Full"
+			State.LodEnabled = false
+			-- Look for KeyframeSequence named "R6Walk" for Luna playback.
+			-- For native comparison, NativeAnimatorRunner will separately look for
+			-- an Animation instance with the same name.
+			local AnimationsFolder = workspace:FindFirstChild("Animations")
+			local R6WalkKFS: KeyframeSequence? = nil
+			if AnimationsFolder then
+				for _, Child in AnimationsFolder:GetChildren() do
+					if Child.Name == "R6Walk" and Child:IsA("KeyframeSequence") then
+						R6WalkKFS = Child :: KeyframeSequence
+						break
+					end
+				end
+			end
+			if R6WalkKFS then
+				State.AnimationSource = {
+					Kind = "FromPlace",
+					SyntheticType = nil,
+					KeyframeSequence = R6WalkKFS,
+					AssetId = nil,
+				}
+			else
+				-- No KFS found — fallback to synthetic WalkCycle
+				State.AnimationSource = {
+					Kind = "Synthetic",
+					SyntheticType = "WalkCycle",
+					KeyframeSequence = nil,
+					AssetId = nil,
+				}
+			end
+			State.RigVariants = {
+				PristinePercent = 100,
+				MissingLimbPercent = 0,
+				ToolEquippedPercent = 0,
+			}
+		end
+	end
+	Iris.End()
+
 	-- ── Start / Stop ─────────────────────────────────────────────────────
 
 	Iris.SeparatorText({ "Run" })
