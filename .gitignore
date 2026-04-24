@@ -1,0 +1,11 @@
+Packages/
+!Packages/.gitkeep
+*.rbxl
+*.rbxlx
+*.rbxm
+sourcemap.json
+internal/
+build/
+.pesde/
+lune_packages/
+roblox_packages/

@@ -1,0 +1,30 @@
+{
+	"name": "LunaRuntimeTests",
+	"tree": {
+		"$className": "DataModel",
+		"ReplicatedStorage": {
+			"$className": "ReplicatedStorage",
+			"Luna": {
+				"$className": "Folder",
+				"Core": {
+					"$path": "src/Core"
+				},
+				"Solver": {
+					"$path": "src/Solver"
+				},
+				"Types": {
+					"$path": "src/Types"
+				},
+				"Shared": {
+					"$path": "src/Shared"
+				},
+				"Packages": {
+					"$path": "Packages"
+				}
+			},
+			"Tests": {
+				"$path": "tests"
+			}
+		}
+	}
+}

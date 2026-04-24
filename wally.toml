@@ -1,0 +1,13 @@
+[package]
+name = "useluna/luna-runtime"
+version = "0.1.0"
+registry = "https://github.com/UpliftGames/wally-index"
+realm = "shared"
+license = "MIT"
+description = "Animation runtime for Roblox. Playback, blending, modifiers."
+authors = ["UseLuna"]
+repository = "https://github.com/UseLuna/luna-runtime"
+include = ["src", "default.project.json", "wally.toml", "LICENSE", "README.md"]
+
+[dependencies]
+Janitor = "howmanysmall/janitor@1.18.3"
