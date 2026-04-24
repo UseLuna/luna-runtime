@@ -1,0 +1,38 @@
+{
+    "permissions": {
+    "allow": [
+      "Bash(*)",
+      "WebFetch(*)"
+    ],
+    "deny": [],
+    "additionalDirectories": [
+      "c:\\Users\\admin\\Documents\\luna-shared",
+      "c:\\Users\\admin\\Documents\\LunaAnimator",
+      "c:\\Users\\admin\\.claude\\plans",
+      "\\tmp"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILE=$(cat | jq -r '.tool_input.file_path // empty'); if [ -n \"$FILE\" ] && echo \"$FILE\" | grep -qE '\\.luau$'; then selene \"$FILE\" 2>&1; stylua --check \"$FILE\" 2>&1; fi; exit 0"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "FILES=$(git -C \"c:/Users/admin/Documents/LunaAnimator\" diff --name-only HEAD 2>/dev/null | grep '\\.luau$'); if [ -n \"$FILES\" ]; then cd \"c:/Users/admin/Documents/LunaAnimator\" && echo \"$FILES\" | xargs selene 2>&1; echo \"$FILES\" | xargs stylua --check 2>&1; fi; exit 0"
+          }
+        ]
+      }
+    ]
+  }
+}
