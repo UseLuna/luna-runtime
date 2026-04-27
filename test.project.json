@@ -1,30 +1,54 @@
 {
 	"name": "LunaRuntimeTests",
+	"globIgnorePaths": [
+		"roblox_packages/LunaRuntime.luau",
+		"roblox_packages/.pesde/**/test.project.json",
+		"roblox_packages/.pesde/**/test-place.project.json",
+		"roblox_packages/.pesde/**/test-model.project.json",
+		"roblox_packages/.pesde/**/test-runner.project.json",
+		"roblox_packages/.pesde/**/benchmark.project.json",
+		"roblox_packages/.pesde/**/benchmark-*.project.json",
+		"roblox_packages/.pesde/**/benchmarks.project.json",
+		"roblox_packages/.pesde/**/harness.project.json",
+		"roblox_packages/.pesde/**/dev.project.json",
+		"roblox_packages/.pesde/**/plugin.project.json",
+		"roblox_packages/.pesde/**/*.md",
+		"roblox_packages/.pesde/**/*.toml",
+		"roblox_packages/.pesde/**/*.lock",
+		"roblox_packages/.pesde/**/benchmark/**",
+		"roblox_packages/.pesde/**/docs/**",
+		"roblox_packages/.pesde/**/internal/**",
+		"roblox_packages/.pesde/**/tests/**",
+		"roblox_packages/.pesde/**/scripts/**",
+		"roblox_packages/.pesde/**/build/**",
+		"roblox_packages/.pesde/**/.claude/**",
+		"roblox_packages/.pesde/**/sync-*.sh"
+	],
 	"tree": {
 		"$className": "DataModel",
 		"ReplicatedStorage": {
 			"$className": "ReplicatedStorage",
+			"$ignoreUnknownInstances": true,
 			"Luna": {
 				"$className": "Folder",
-				"Core": {
-					"$path": "src/Core"
-				},
-				"Solver": {
-					"$path": "src/Solver"
-				},
-				"Types": {
-					"$path": "src/Types"
-				},
-				"Shared": {
-					"$path": "src/Shared"
-				},
+				"Core": { "$path": "src/Core" },
+				"Solver": { "$path": "src/Solver" },
+				"Types": { "$path": "src/Types" },
+				"Shared": { "$path": "src/Shared" },
 				"Packages": {
-					"$path": "Packages"
+					"$className": "Folder",
+					"janitor":      { "$path": "roblox_packages/janitor.luau" },
+					"iris":         { "$path": "roblox_packages/iris.luau" },
+					"jest":         { "$path": "roblox_packages/jest.luau" },
+					"jest_globals": { "$path": "roblox_packages/jest_globals.luau" },
+					".pesde":       { "$path": "roblox_packages/.pesde" }
 				}
 			},
-			"Tests": {
-				"$path": "tests"
-			}
+			"Tests": { "$path": "tests/spec" }
+		},
+		"ServerScriptService": {
+			"$ignoreUnknownInstances": true,
+			"RunTests": { "$path": "tests/runner.server.luau" }
 		}
 	}
 }

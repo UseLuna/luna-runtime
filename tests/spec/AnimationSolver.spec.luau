@@ -531,4 +531,57 @@ describe("AnimationSolver", function()
 			expect(#Solver:GetLayers()).toBe(1)
 		end)
 	end)
+
+	describe("Auto-masking from track presence", function()
+		-- Build a Runtime animation (NOT sampled) with tracks for the named bones at identity.
+		local function __MakeRuntimeAnimation(BoneNames: { string }): any
+			local Edit = AnimationData.CreateEmptyAnimation("AutoMaskTest", 1.0)
+			for _, Name in BoneNames do
+				local Track = AnimationData.CreateEmptyTrack(Name)
+				AnimationData.AddKeyframe(Track, 0, CFrame.identity)
+				AnimationData.AddKeyframe(Track, 1, CFrame.identity)
+				table.insert(Edit.Tracks, Track)
+			end
+			return AnimationData.CompileEditToRuntime(Edit)
+		end
+
+		it("defaults bone weights to 1.0 for tracks present and 0.0 for tracks absent", function()
+			local Solver = AnimationSolver.new(RigInfo)
+
+			-- BONE_NAMES = { "LowerTorso", "UpperTorso", "Head", "RightUpperArm", "LeftUpperArm" }
+			-- Author tracks for upper body only (no LowerTorso).
+			local Runtime = __MakeRuntimeAnimation({ "UpperTorso", "Head", "RightUpperArm", "LeftUpperArm" })
+			local Layer = Solver:AddLayer({ Animation = Runtime, Weight = 1.0 })
+
+			expect(__ReadBoneWeight(Layer, RigInfo.Skeleton.NameToIndex.UpperTorso)).toBe(1.0)
+			expect(__ReadBoneWeight(Layer, RigInfo.Skeleton.NameToIndex.Head)).toBe(1.0)
+			expect(__ReadBoneWeight(Layer, RigInfo.Skeleton.NameToIndex.RightUpperArm)).toBe(1.0)
+			expect(__ReadBoneWeight(Layer, RigInfo.Skeleton.NameToIndex.LeftUpperArm)).toBe(1.0)
+			expect(__ReadBoneWeight(Layer, RigInfo.Skeleton.NameToIndex.LowerTorso)).toBe(0.0)
+
+			Solver:Destroy()
+		end)
+
+		it("explicit InitialMaskWeights overrides the auto-mask", function()
+			local Solver = AnimationSolver.new(RigInfo)
+
+			-- Author a Head-only track.
+			local Runtime = __MakeRuntimeAnimation({ "Head" })
+
+			-- Explicit mask: half-weight on UpperTorso, zero on Head — opposite of what auto-mask would produce.
+			local BoneCount = #RigInfo.Skeleton.BoneNames
+			local Mask = buffer.create(BoneCount * 4)
+			for Index, Name in RigInfo.Skeleton.BoneNames do
+				local Weight: number = if Name == "UpperTorso" then 0.5 else 0.0
+				buffer.writef32(Mask, (Index - 1) * 4, Weight)
+			end
+
+			local Layer = Solver:AddLayer({ Animation = Runtime, Weight = 1.0, InitialMaskWeights = Mask })
+
+			expect(__ReadBoneWeight(Layer, RigInfo.Skeleton.NameToIndex.UpperTorso)).toBe(0.5)
+			expect(__ReadBoneWeight(Layer, RigInfo.Skeleton.NameToIndex.Head)).toBe(0.0)
+
+			Solver:Destroy()
+		end)
+	end)
 end)
