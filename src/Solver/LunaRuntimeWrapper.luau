@@ -792,6 +792,12 @@ function LunaRuntimeWrapper.RemoveRig(Rig: RigHandle)
 		__DestroyConnections[Rig.Model] = nil
 	end
 
+	-- Decrement skeleton refcount; evicts cache when refcount hits zero.
+	-- RigInfo carries the binding produced by RigResolver.Resolve.
+	if Rig.RigInfo then
+		RigResolver.ReleaseBinding(Rig.RigInfo)
+	end
+
 	-- Invalidate the handle
 	Rig.Id = nil
 end

@@ -6,8 +6,10 @@ local describe = JestGlobals.describe
 local it = JestGlobals.it
 local expect = JestGlobals.expect
 local beforeEach = JestGlobals.beforeEach
+local afterEach = JestGlobals.afterEach
 
 local RigResolver = require(ReplicatedStorage.Luna.Solver.RigResolver)
+local LunaRuntimeWrapper = require(ReplicatedStorage.Luna.Solver.LunaRuntimeWrapper)
 local Constants = require(ReplicatedStorage.Luna.Core.Constants)
 
 -- ============================================================================
@@ -230,6 +232,34 @@ describe("RigResolver", function()
 			expect(math.abs(TorsoPose.Position.Z)).toBeLessThan(0.001)
 
 			Rig:Destroy()
+		end)
+	end)
+
+	-- LunaRuntimeWrapper.RemoveRig must release the skeleton binding so the
+	-- shared SkeletonInfo cache evicts cleanly when refcount hits zero.
+	describe("LunaRuntimeWrapper rig removal refcount", function()
+		afterEach(function()
+			LunaRuntimeWrapper.Reset()
+		end)
+
+		it("decrements skeleton refcount when wrapper removes rig", function()
+			local Model1 = __CreateMockRig({ "Torso" }, { "HumanoidRootPart" })
+			local Model2 = __CreateMockRig({ "Torso" }, { "HumanoidRootPart" })
+
+			local Rig1 = LunaRuntimeWrapper.ResolveRig(Model1)
+			local Rig2 = LunaRuntimeWrapper.ResolveRig(Model2)
+
+			-- Both rigs share the same SkeletonInfo by fingerprint
+			expect(Rig1.RigInfo.Skeleton).toBe(Rig2.RigInfo.Skeleton)
+			expect(Rig1.RigInfo.Skeleton.RefCount).toBe(2)
+
+			LunaRuntimeWrapper.RemoveRig(Rig1)
+
+			-- After removal, refcount drops by 1
+			expect(Rig2.RigInfo.Skeleton.RefCount).toBe(1)
+
+			Model1:Destroy()
+			Model2:Destroy()
 		end)
 	end)
 end)
