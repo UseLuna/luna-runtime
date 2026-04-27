@@ -23,6 +23,7 @@
 local Luna = script.Parent.Parent
 
 local AnimationData = require(Luna.Core.AnimationData)
+local SolverTypes = require(Luna.Types.SolverTypes)
 local Logger = require(Luna.Shared.Logger)
 local AnimationPlayer = require(script.Parent.AnimationPlayer)
 local AnimationSolver = require(script.Parent.AnimationSolver)
@@ -720,6 +721,42 @@ function LunaRuntimeWrapper.GetSolverUnsafe(RigOrModel: any): any
 		return nil
 	end
 	return Entry.Solver
+end
+
+-- ============================================================================
+-- [[ HOOK REGISTRATION (passthroughs to AnimationSolver) ]]
+-- ============================================================================
+
+function LunaRuntimeWrapper.AddPreSolveHook(RigOrModel: any, Name: string, Config: SolverTypes.HookConfig)
+	local Solver = LunaRuntimeWrapper.GetSolverUnsafe(RigOrModel)
+	if not Solver then
+		Logger.Warn(`AddPreSolveHook: no solver for {RigOrModel}`)
+		return
+	end
+	AnimationSolver.AddPreSolveHook(Solver, Name, Config)
+end
+
+function LunaRuntimeWrapper.RemovePreSolveHook(RigOrModel: any, Name: string)
+	local Solver = LunaRuntimeWrapper.GetSolverUnsafe(RigOrModel)
+	if Solver then
+		AnimationSolver.RemovePreSolveHook(Solver, Name)
+	end
+end
+
+function LunaRuntimeWrapper.AddPostSolveHook(RigOrModel: any, Name: string, Config: SolverTypes.HookConfig)
+	local Solver = LunaRuntimeWrapper.GetSolverUnsafe(RigOrModel)
+	if not Solver then
+		Logger.Warn(`AddPostSolveHook: no solver for {RigOrModel}`)
+		return
+	end
+	AnimationSolver.AddPostSolveHook(Solver, Name, Config)
+end
+
+function LunaRuntimeWrapper.RemovePostSolveHook(RigOrModel: any, Name: string)
+	local Solver = LunaRuntimeWrapper.GetSolverUnsafe(RigOrModel)
+	if Solver then
+		AnimationSolver.RemovePostSolveHook(Solver, Name)
+	end
 end
 
 -- ============================================================================

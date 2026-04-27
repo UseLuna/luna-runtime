@@ -99,6 +99,25 @@ type HookEntry = {
 -- [[ LIVE BONE WEIGHTS (buffer-backed) ]]
 -- ============================================================================
 
+-- Derive an implicit per-bone mask from a layer's RuntimeAnimation: 1.0 for bones
+-- with tracks, 0.0 for absent. Caller passes nil if no Animation is available
+-- (e.g., sampled-only layers); in that case AddLayer falls back to the historical
+-- 1.0-everywhere default.
+local function __DeriveAutoMaskBuffer(Animation: AnimationData.RuntimeAnimation, Skeleton: SkeletonInfo): buffer
+	local BoneCount = #Skeleton.BoneNames
+	local Mask = buffer.create(BoneCount * 4)
+	-- buffer.create zeroes the contents, so untracked bones default to 0.
+
+	for _, Track in Animation.Tracks do
+		local Index = Skeleton.NameToIndex[Track.Name]
+		if Index then
+			buffer.writef32(Mask, (Index - 1) * 4, 1.0)
+		end
+	end
+
+	return Mask
+end
+
 local function __CreateLiveBoneWeights(BoneCount: number, InitialMaskWeights: buffer?): LiveBoneWeights
 	local CurrentWeights = buffer.create(BoneCount * 4)
 	local TransitionState = buffer.create(BoneCount * BW_TRANSITION_STRIDE)
@@ -326,8 +345,16 @@ function AnimationSolver.AddLayer(self: AnimationSolver, Config: LayerConfig): B
 
 	local InitialWeight = Config.Weight or 1.0
 
-	-- InitialMaskWeights is already a buffer (from BoneMask.Weights) or nil
-	local BoneWeights = __CreateLiveBoneWeights(self._BoneCount, Config.InitialMaskWeights :: buffer?)
+	-- Mask resolution priority:
+	--   1. Explicit InitialMaskWeights (BoneMask.Weights or hand-built buffer)
+	--   2. Auto-mask from Config.Animation.Tracks (Replace layers with partial track sets
+	--      no longer overwrite untouched bones at non-zero weight)
+	--   3. Historical 1.0-everywhere default (sampled-only layers, no track list to derive from)
+	local MaskBuffer: buffer? = Config.InitialMaskWeights :: buffer?
+	if MaskBuffer == nil and Config.Animation then
+		MaskBuffer = __DeriveAutoMaskBuffer(Config.Animation :: AnimationData.RuntimeAnimation, self._Skeleton)
+	end
+	local BoneWeights = __CreateLiveBoneWeights(self._BoneCount, MaskBuffer)
 
 	local LayerName = Config.Name
 
