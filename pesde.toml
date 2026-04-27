@@ -1,5 +1,5 @@
 name = "useluna/luna_runtime"
-version = "0.1.0"
+version = "0.2.0"
 description = "Animation runtime for Roblox. Playback, blending, modifiers."
 authors = ["PRMS Developer"]
 repository = "https://github.com/UseLuna/luna-runtime"
