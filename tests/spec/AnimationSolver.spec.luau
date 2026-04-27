@@ -184,6 +184,46 @@ describe("AnimationSolver", function()
 		end)
 	end)
 
+	-- BlendLayer table identity must be stable across AddLayer (with sort) and
+	-- across Update calls. MEV5 CharacterModifier caches Layer refs in OnAttach
+	-- and writes Layer.Weight directly per frame. If table identity is not
+	-- stable, those cached refs go stale and the modifier writes to the wrong
+	-- table. See spec item 5 + item 13.
+	describe("BlendLayer identity stability (modifier-cache contract)", function()
+		it("preserves layer table identity across AddLayer + sort", function()
+			local Solver = AnimationSolver.new(RigInfo)
+			local Anim = __MakeSimpleAnimation("Head", CFrame.identity)
+
+			local Layer1 = Solver:AddLayer({ SampledAnimation = Anim, Priority = 5, Name = "L1" })
+			local Layer2 = Solver:AddLayer({ SampledAnimation = Anim, Priority = 1, Name = "L2" })
+
+			expect(Solver:GetLayer("L1")).toBe(Layer1)
+			expect(Solver:GetLayer("L2")).toBe(Layer2)
+
+			Solver:AddLayer({ SampledAnimation = Anim, Priority = 3, Name = "L3" })
+
+			expect(Solver:GetLayer("L1")).toBe(Layer1)
+			expect(Solver:GetLayer("L2")).toBe(Layer2)
+			Solver:Destroy()
+		end)
+
+		it("preserves layer table identity across solver Update", function()
+			local Solver = AnimationSolver.new(RigInfo)
+			local Anim = __MakeSimpleAnimation("Head", CFrame.identity)
+
+			local Layer = Solver:AddLayer({ SampledAnimation = Anim, Name = "L" })
+			Layer.Player.IsLooping = true
+			Layer.Player.Play(Layer.Player)
+
+			for _ = 1, 10 do
+				Solver:Update(0.016)
+			end
+
+			expect(Solver:GetLayer("L")).toBe(Layer)
+			Solver:Destroy()
+		end)
+	end)
+
 	describe("Single Layer Playback", function()
 		it("applies a single animation to the rig", function()
 			local Solver = AnimationSolver.new(RigInfo)

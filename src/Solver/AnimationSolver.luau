@@ -16,6 +16,14 @@
 	9. Apply Additive layers on top
 	10. PostSolve hooks (modify final pose buffers)
 	11. Apply final Pose to rig via PoseApplier
+
+	Stability Invariants:
+	- BlendLayer table identity is stable for the lifetime of the layer.
+	  AddLayer's table.sort permutes _Layers indices but never reallocates the
+	  Layer tables themselves. Caching a Layer reference (or Layer.Player ref)
+	  from AddLayer's return value is safe until RemoveLayer is called for
+	  that specific layer. Verified by tests/spec/AnimationSolver.spec.luau
+	  "BlendLayer identity stability (modifier-cache contract)".
 ]]
 
 local Luna = script.Parent.Parent
