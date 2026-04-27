@@ -506,14 +506,21 @@ function AnimationPlayer.FadeOut(self: any, Duration: number)
 end
 
 function AnimationPlayer.SetSpeed(self: any, Speed: number): any
-	self.Speed = Speed
+	if self.Speed ~= Speed then
+		self.Speed = Speed
+	end
 	return self
 end
 
 function AnimationPlayer.SetWeight(self: any, Weight: number): any
-	self.Weight = Weight
-	if self._Layer then
-		self._Layer.Weight = Weight
+	-- Both fields are needed: Layer.Weight is read by the Solver during blending,
+	-- self.Weight is read by FadeTo/FadeOut as the fade start weight.
+	if self.Weight ~= Weight then
+		self.Weight = Weight
+	end
+	local Layer = self._Layer
+	if Layer and Layer.Weight ~= Weight then
+		Layer.Weight = Weight
 	end
 	return self
 end
@@ -528,13 +535,20 @@ end
 -- ============================================================================
 
 function LunaRuntimeWrapper.SetSpeed(Handle: any, Speed: number)
-	Handle.Speed = Speed
+	if Handle.Speed ~= Speed then
+		Handle.Speed = Speed
+	end
 end
 
 function LunaRuntimeWrapper.SetWeight(Handle: any, Weight: number)
-	Handle.Weight = Weight
-	if Handle._Layer then
-		Handle._Layer.Weight = Weight
+	-- Both fields are needed: Layer.Weight is read by the Solver during blending,
+	-- Handle.Weight is read by FadeTo/FadeOut as the fade start weight.
+	if Handle.Weight ~= Weight then
+		Handle.Weight = Weight
+	end
+	local Layer = Handle._Layer
+	if Layer and Layer.Weight ~= Weight then
+		Layer.Weight = Weight
 	end
 end
 

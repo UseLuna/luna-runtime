@@ -107,4 +107,69 @@ describe("LunaRuntimeWrapper", function()
 			Model:Destroy()
 		end)
 	end)
+
+	describe("SetWeight / SetSpeed equality gate", function()
+		it("does not write Layer.Weight when value is unchanged", function()
+			local Model = __MakeMinimalRigModel()
+			local Loaded = LunaRuntimeWrapper.FromEdit(__MakeNoOpEditAnimation(1.0))
+			local Handle = LunaRuntimeWrapper.Play(Model, Loaded, { Weight = 0.5 })
+			local Layer = Handle._Layer
+
+			-- Replace _Layer with a proxy that counts Weight writes
+			local LayerWriteCount = 0
+			local Proxy = setmetatable({}, {
+				__index = Layer,
+				__newindex = function(_, K, V)
+					if K == "Weight" then
+						LayerWriteCount += 1
+					end
+					rawset(Layer, K, V)
+				end,
+			})
+			Handle._Layer = Proxy :: any
+
+			LunaRuntimeWrapper.SetWeight(Handle, 0.5) -- same value
+			expect(LayerWriteCount).toBe(0)
+
+			LunaRuntimeWrapper.SetWeight(Handle, 0.7) -- new value
+			expect(LayerWriteCount).toBe(1)
+
+			LunaRuntimeWrapper.SetWeight(Handle, 0.7) -- same again
+			expect(LayerWriteCount).toBe(1)
+
+			Model:Destroy()
+		end)
+
+		it("does not write Handle.Speed when value is unchanged", function()
+			local Model = __MakeMinimalRigModel()
+			local Loaded = LunaRuntimeWrapper.FromEdit(__MakeNoOpEditAnimation(1.0))
+			local Handle = LunaRuntimeWrapper.Play(Model, Loaded, { Speed = 1.0 })
+
+			local SpeedWriteCount = 0
+			-- Wrap Handle.Speed via a proxy table that intercepts writes
+			local OriginalSpeed = Handle.Speed
+			local CapturedHandle = setmetatable({
+				_Layer = Handle._Layer,
+				Speed = OriginalSpeed,
+			}, {
+				__newindex = function(t, K, V)
+					if K == "Speed" then
+						SpeedWriteCount += 1
+					end
+					rawset(t, K, V)
+				end,
+			})
+
+			LunaRuntimeWrapper.SetSpeed(CapturedHandle :: any, 1.0)
+			expect(SpeedWriteCount).toBe(0)
+
+			LunaRuntimeWrapper.SetSpeed(CapturedHandle :: any, 1.5)
+			expect(SpeedWriteCount).toBe(1)
+
+			LunaRuntimeWrapper.SetSpeed(CapturedHandle :: any, 1.5)
+			expect(SpeedWriteCount).toBe(1)
+
+			Model:Destroy()
+		end)
+	end)
 end)
