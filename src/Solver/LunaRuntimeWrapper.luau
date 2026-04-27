@@ -79,7 +79,11 @@ type RigEntry = {
 	Solver: any, -- AnimationSolver
 	Handles: { any }, -- dense array of PlaybackHandles
 	HandleCount: number,
-	MaxLodTier: number?,
+	-- Per-layer LOD cap (math.huge / 2 / 1 / 0). NOT the LOD tier bucket
+	-- (1-4) returned by SolverLodManager.GetTier — that's a different concept.
+	-- This field is read by the non-LOD wrapper path; the LOD path lets
+	-- SolverLodManager pass MaxLodTier through Solver.Update directly.
+	LayerLodCap: number?,
 	SkipFrames: number,
 }
 
@@ -123,7 +127,7 @@ local function __GetOrCreateEntry(Rig: RigHandle): RigEntry
 		Solver = Solver,
 		Handles = {},
 		HandleCount = 0,
-		MaxLodTier = nil,
+		LayerLodCap = nil,
 		SkipFrames = 0,
 	}
 
@@ -355,7 +359,7 @@ function LunaRuntimeWrapper.Play(RigOrModel: any, Animation: LoadedAnimation, Op
 	local Handle = Layer.Player :: any
 	Handle._HandleId = __NextHandleId()
 	Handle._Rig = Rig
-	Handle._LoadedAnimation = Animation  -- store as _LoadedAnimation, NOT _Animation (which is RuntimeAnimation used by AnimationSolver)
+	Handle._LoadedAnimation = Animation -- store as _LoadedAnimation, NOT _Animation (which is RuntimeAnimation used by AnimationSolver)
 	Handle._Layer = Layer
 	Handle._FadeTarget = nil
 	Handle._FadeDuration = 0
@@ -554,7 +558,12 @@ end
 -- [[ CROSSFADE ]]
 -- ============================================================================
 
-function LunaRuntimeWrapper.Crossfade(RigOrModel: any, Animation: LoadedAnimation, Duration: number, Options: PlayOptions?): any
+function LunaRuntimeWrapper.Crossfade(
+	RigOrModel: any,
+	Animation: LoadedAnimation,
+	Duration: number,
+	Options: PlayOptions?
+): any
 	local Rig = __ResolveRigArg(RigOrModel)
 	local Entry = __ModelToEntry[Rig.Model]
 
@@ -631,17 +640,7 @@ end
 -- ============================================================================
 
 function LunaRuntimeWrapper.Step(DeltaTime: number)
-	-- 1. LOD step
-	if __LodManager and __RigCount > 0 then
-		SolverLodManager.Step(__LodManager, DeltaTime)
-		-- Write MaxLodTier into each RigEntry from LOD manager
-		for I = 1, __RigCount do
-			local Entry = __RigArray[I]
-			Entry.MaxLodTier = SolverLodManager.GetTier(__LodManager, Entry.Solver)
-		end
-	end
-
-	-- 2. Tick active fades (separate dense array, usually empty)
+	-- 1. Tick active fades (separate dense array, usually empty)
 	local I = 1
 	while I <= __FadingCount do
 		local Handle = __FadingHandles[I]
@@ -649,37 +648,41 @@ function LunaRuntimeWrapper.Step(DeltaTime: number)
 		local Alpha = math.min(Handle._FadeElapsed / Handle._FadeDuration, 1)
 		local NewWeight = Handle._FadeStartWeight + (Handle._FadeTarget - Handle._FadeStartWeight) * Alpha
 		Handle.Weight = NewWeight
-		-- Sync layer weight
 		if Handle._Layer then
 			Handle._Layer.Weight = NewWeight
 		end
 		if Alpha >= 1 then
 			Handle._FadeTarget = nil
-			-- Swap-remove from fading array
 			__FadingHandles[I] = __FadingHandles[__FadingCount]
 			__FadingHandles[__FadingCount] = nil
 			__FadingCount -= 1
-			-- Auto-stop if faded to zero
 			if NewWeight <= 0.001 and Handle._AutoStopOnFadeOut then
 				LunaRuntimeWrapper.Stop(Handle)
 			end
-			-- Don't increment — swapped element needs processing
 		else
 			I += 1
 		end
 	end
 
-	-- 3. Evaluate all rigs (animation data hot in cache)
+	-- 2. Either LOD-driven dispatch OR wrapper-driven Evaluate+Apply, never both.
+	-- SolverLodManager.Step calls Solver.Update on each managed rig at its
+	-- scheduled cadence with the correct MaxLodTier (layer cap). Mirror the
+	-- editor harness: no additional Evaluate/Apply calls in this branch.
+	if __LodManager and __RigCount > 0 then
+		SolverLodManager.Step(__LodManager, DeltaTime)
+		return
+	end
+
+	-- Non-LOD path: two-pass Evaluate-all then Apply-all (cross-rig batching).
 	for RigIdx = 1, __RigCount do
 		local Entry = __RigArray[RigIdx]
 		if Entry.SkipFrames > 0 then
 			Entry.SkipFrames -= 1
 			continue
 		end
-		AnimationSolver.Evaluate(Entry.Solver, DeltaTime, Entry.MaxLodTier)
+		AnimationSolver.Evaluate(Entry.Solver, DeltaTime, nil)
 	end
 
-	-- 4. Apply all motor writes (batch motor writes)
 	for RigIdx = 1, __RigCount do
 		local Entry = __RigArray[RigIdx]
 		if Entry.SkipFrames <= 0 then
