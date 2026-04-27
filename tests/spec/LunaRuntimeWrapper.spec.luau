@@ -172,4 +172,20 @@ describe("LunaRuntimeWrapper", function()
 			Model:Destroy()
 		end)
 	end)
+
+	describe("FromKeyframeSequence cache instance keying", function()
+		it("returns identical LoadedAnimation for the same KFS instance", function()
+			local KFS = Instance.new("KeyframeSequence")
+			KFS.Name = "TestSeq"
+			local Kf = Instance.new("Keyframe")
+			Kf.Time = 0
+			Kf.Parent = KFS
+
+			local A = LunaRuntimeWrapper.FromKeyframeSequence(KFS)
+			local B = LunaRuntimeWrapper.FromKeyframeSequence(KFS)
+
+			expect(A).toBe(B)
+			KFS:Destroy()
+		end)
+	end)
 end)
